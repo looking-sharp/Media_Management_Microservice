@@ -3,7 +3,7 @@ from flask_cors import CORS
 from PIL import Image
 from io import BytesIO
 from s3_manager import upload_to_s3
-from database import init_db, get_db, add_image_to_db
+from database import init_db, get_db, add_image_to_db, delete_media
 from models import Media
 import os
 import mimetypes
@@ -24,6 +24,11 @@ CORS(app, resources={
     }
 })
 
+"""
+
+HELP: The image processor doesn't appear to be compressing images properly.
+
+"""
 def process_image(file):
     img = Image.open(file)
     fmt = img.format
@@ -60,14 +65,16 @@ def upload():
     file_size = file.tell() / (1024 * 1024)
     file.seek(0)
 
-    if mimetype and mimetype.startswith("/image"):
+    if mimetype and mimetype.startswith("image"):
         try:
+            print("PROCESSING IMAGE")
             file_bytes, mimetype, file_size = process_image(file)
         except Exception as e:
             return jsonify({"message": "invalid image file", "error": {str(e)}}), 400
     else:
         # this will make it upload any file that's not an image at ful size
         # this is dangerous but not sure how to proceed just yet
+        print("NOT IMAGE")
         file_bytes = file.read()
 
     ext = mimetypes.guess_extension(mimetype) or ""
@@ -78,10 +85,11 @@ def upload():
         file_name = file.filename,
         mime_type = mimetype,
         file_size = file_size,
-        backend_url = upload_to_s3(file_bytes, key, mimetype)
+        backend_url = upload_to_s3(file_bytes, key, mimetype),
+        key = key
     )
 
-@app.route("/access/<url_id>")
+@app.route("/access/<url_id>", methods=["GET"])
 def access_media(url_id):
     with get_db() as db:
         media = db.query(Media).filter(Media.url_id == url_id).first()
@@ -93,6 +101,10 @@ def access_media(url_id):
             return jsonify({"message": "file unavailable"}), 500
         
         return Response(r.content, mimetype=r.headers.get("Content-Type"))
+
+@app.route("/delete/<url_id>", methods=["POST"])
+def delete_media_route(url_id):
+    return delete_media(url_id = url_id)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5004"))

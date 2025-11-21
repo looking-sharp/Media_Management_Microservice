@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from contextlib import contextmanager
 from flask import jsonify
 from datetime import datetime, timedelta
+from s3_manager import delete_from_s3
 import os
 import secrets
 
@@ -85,7 +86,7 @@ def add_to_db(session, instance, return_bool=False):
             return False
         raise e
 
-def add_image_to_db(image_id, file_name, mime_type, file_size, backend_url):
+def add_image_to_db(image_id, file_name, mime_type, file_size, backend_url, key):
     with get_db() as db:
         url_id = create_url_id(db)
         new_media = Media (
@@ -94,7 +95,8 @@ def add_image_to_db(image_id, file_name, mime_type, file_size, backend_url):
             file_name = file_name,
             mime_type = mime_type,
             file_size = file_size,
-            backend_url = backend_url
+            backend_url = backend_url,
+            key = key
         )
 
         db.add(new_media)
@@ -106,3 +108,14 @@ def add_image_to_db(image_id, file_name, mime_type, file_size, backend_url):
                         "file_name": file_name,
                         "mime_type": mime_type,
                         "file_size": file_size}), 200
+    
+def delete_media(url_id):
+    with get_db() as db:
+        media = db.query(Media).filter(Media.url_id == url_id).first()
+        if not media:
+            return jsonify({"message": "media not found"}), 400
+        delete_status = delete_from_s3(media.key)
+        if not delete_status:
+            return jsonify({"message": "error deleting image"}), 400
+        db.delete(media)
+    return jsonify({"message": f"Media with url_id = {url_id} has been successfully deleted"}), 200

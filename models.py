@@ -23,5 +23,6 @@ class Media(Base):
     mime_type = Column(String(100), nullable=False)
     file_size = Column(Integer, nullable=False)
     backend_url = Column(Text, nullable=False)
+    key = Column(Text, nullable=False)
     created_on = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     delete_on = Column(DateTime(timezone=True), nullable=True)

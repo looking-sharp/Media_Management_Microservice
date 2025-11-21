@@ -31,3 +31,14 @@ def upload_to_s3(file_bytes, key, content_type):
         ContentType = content_type
     )
     return f"{PUB_S3_LINK}/{key}"
+
+def delete_from_s3(key):
+    try:
+        s3.delete_object(
+            Bucket=BUCKET,
+            Key=key
+        )
+        return True
+    except Exception as e:
+        print("S3 delete error:", e)
+        return False
