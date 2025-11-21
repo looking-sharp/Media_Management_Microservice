@@ -110,6 +110,15 @@ def access_media(url_id):
         
         return Response(r.content, mimetype=r.headers.get("Content-Type"))
 
+@app.route("/access-link/<url_id>")
+def access_media(url_id):
+    with get_db() as db:
+        media = db.query(Media).filter(Media.url_id == url_id).first()
+        if not media:
+            return jsonify({"message": "media not found"}), 400
+        
+        return jsonify({"link": media.backend_url}), 200
+
 @app.route("/delete/<url_id>", methods=["POST"])
 def delete_media_route(url_id):
     return delete_media(url_id = url_id)
