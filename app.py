@@ -111,7 +111,7 @@ def access_media(url_id):
         return Response(r.content, mimetype=r.headers.get("Content-Type"))
 
 @app.route("/access-link/<url_id>")
-def access_media(url_id):
+def access_media_link(url_id):
     with get_db() as db:
         media = db.query(Media).filter(Media.url_id == url_id).first()
         if not media:
