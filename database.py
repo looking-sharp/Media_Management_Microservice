@@ -118,4 +118,5 @@ def delete_media(url_id):
         if not delete_status:
             return jsonify({"message": "error deleting image"}), 400
         db.delete(media)
+        db.commit()
     return jsonify({"message": f"Media with url_id = {url_id} has been successfully deleted"}), 200

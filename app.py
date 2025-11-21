@@ -13,7 +13,7 @@ import uuid
 app = Flask(__name__)
 
 MAX_SIZE_MB = 2
-TARGET_MAX_PIXELS = 1024
+MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
 
 allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5000").split(",")
 CORS(app, resources={
@@ -33,20 +33,30 @@ def process_image(file):
     img = Image.open(file)
     fmt = img.format
 
-    img.thumbnail((TARGET_MAX_PIXELS, TARGET_MAX_PIXELS))
-    buffer = BytesIO()
+    quality = 95
+    min_quality = 20
+    step = 5
 
-    save_kwargs = {}
-    if fmt == "JPEG":
-        save_kwargs["quality"] = 80
-    elif fmt in ["PNG", "WEBP"]:
-        save_kwargs["optimize"] = True
+    while True:
+        buffer = BytesIO()
+        img.save(buffer, format=fmt, quality=quality)
+        data = buffer.getvalue()
+        if len(data) <= MAX_SIZE_BYTES or quality <= min_quality:
+            break
+        quality -= step
+    
+    # If still too large, start reducing size
+    while len(data) > MAX_SIZE_BYTES:
+        width, height = img.size
+        img = img.resize((width // 2, height // 2))
+        buffer = BytesIO()
+        img.save(buffer, format=fmt, quality=quality)
+        data = buffer.getvalue()
 
-    img.save(buffer, format=fmt, **save_kwargs)
-    buffer.seek(0)
+    img.save(buffer, format=fmt)
     size = buffer.tell() / (1024 * 1024)
 
-    return buffer.read(), Image.MIME[fmt], size
+    return data, Image.MIME[fmt], size
 
 @app.route("/health")
 def health():
@@ -67,14 +77,12 @@ def upload():
 
     if mimetype and mimetype.startswith("image"):
         try:
-            print("PROCESSING IMAGE")
             file_bytes, mimetype, file_size = process_image(file)
         except Exception as e:
             return jsonify({"message": "invalid image file", "error": {str(e)}}), 400
     else:
         # this will make it upload any file that's not an image at ful size
         # this is dangerous but not sure how to proceed just yet
-        print("NOT IMAGE")
         file_bytes = file.read()
 
     ext = mimetypes.guess_extension(mimetype) or ""
