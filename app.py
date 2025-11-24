@@ -9,11 +9,15 @@ import os
 import mimetypes
 import requests
 import uuid
+import subprocess
+import tempfile
 
 app = Flask(__name__)
 
-MAX_SIZE_MB = 2
-MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
+MAX_IMAGE_SIZE_MB = 2
+MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
+MAX_VIDEO_SIZE_MB = 25
+MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB * 1024 * 1024
 
 allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5000").split(",")
 CORS(app, resources={
@@ -41,12 +45,12 @@ def process_image(file):
         buffer = BytesIO()
         img.save(buffer, format=fmt, quality=quality)
         data = buffer.getvalue()
-        if len(data) <= MAX_SIZE_BYTES or quality <= min_quality:
+        if len(data) <= MAX_IMAGE_SIZE_BYTES or quality <= min_quality:
             break
         quality -= step
-    
+
     # If still too large, start reducing size
-    while len(data) > MAX_SIZE_BYTES:
+    while len(data) > MAX_IMAGE_SIZE_BYTES:
         width, height = img.size
         img = img.resize((width // 2, height // 2))
         buffer = BytesIO()
@@ -57,6 +61,46 @@ def process_image(file):
     size = buffer.tell() / (1024 * 1024)
 
     return data, Image.MIME[fmt], size
+
+def process_video(file):
+    file.seek(0)
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as src_tmp:
+        src_tmp.write(file.read())
+        src_path = src_tmp.name
+
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as dst_tmp:
+        dst_path = dst_tmp.name
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", src_path,
+        "-vf", "scale='min(1280,iw)':-2",
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-b:v", "2000k",
+        "-c:a", "aac",
+        "-b:a", "128k",
+        dst_path,
+    ]
+
+    subprocess.run(
+        cmd,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    with open(dst_path, "rb") as f:
+        data = f.read()
+
+    size_bytes = len(data)
+    size = size_bytes / (1024 * 1024)
+
+    if size_bytes > MAX_VIDEO_SIZE_BYTES:
+        raise ValueError("compressed video exceeds maximum allowed size")
+
+    return data, "video/mp4", size
 
 @app.route("/health")
 def health():
@@ -80,6 +124,13 @@ def upload():
             file_bytes, mimetype, file_size = process_image(file)
         except Exception as e:
             return jsonify({"message": "invalid image file", "error": {str(e)}}), 400
+    elif mimetype and mimetype.startswith("video"):
+        try:
+            file_bytes, mimetype, file_size = process_video(file)
+        except ValueError as e:
+            return jsonify({"message": str(e)}), 400
+        except Exception as e:
+            return jsonify({"message": "invalid video file", "error": {str(e)}}), 400
     else:
         # this will make it upload any file that's not an image at ful size
         # this is dangerous but not sure how to proceed just yet
