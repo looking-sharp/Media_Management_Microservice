@@ -126,7 +126,4 @@ def delete_media_route(url_id):
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5004"))
     init_db()
-    with get_db() as db:
-        all_media = db.query(Media).all()
-        print(all_media)
     app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
